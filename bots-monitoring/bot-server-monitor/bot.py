@@ -21,7 +21,7 @@ from monitor import (
     get_critical_metrics,
     check_alerts,
 )
-
+from checks.cleanup import run_cleanup
 
 logging.basicConfig(
     format=(
@@ -490,12 +490,50 @@ def main():
         name="server-alerts",
     )
 
+    application.job_queue.run_repeating(
+        send_cleanup_report,
+        interval=2 * 24 * 60 * 60,
+        first=60,
+        name="server-cleanup",
+    )
+
     logger.info(
         "Server Monitor starting..."
     )
 
     application.run_polling()
 
+async def send_cleanup_report(
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    try:
+        returncode, output = await run_cleanup()
+
+        if returncode == 0:
+            message = (
+                "🧹 <b>SERVER CLEANUP</b>\n\n"
+                f"<pre>{output}</pre>"
+            )
+        else:
+            message = (
+                "❌ <b>CLEANUP FAILED</b>\n\n"
+                f"<pre>{output}</pre>"
+            )
+
+        await context.bot.send_message(
+            chat_id=TELEGRAM_GROUP_ID,
+            text=message,
+            parse_mode=ParseMode.HTML,
+        )
+
+        logger.info(
+            "Cleanup report sent"
+        )
+
+    except Exception:
+        logger.exception(
+            "Failed to run cleanup"
+        )
 
 if __name__ == "__main__":
     main()
